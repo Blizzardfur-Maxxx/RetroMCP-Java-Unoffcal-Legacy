@@ -84,7 +84,7 @@ public class VersionsParser {
 	public static URL downloadVersion() throws Exception {
 		checkJson();
 		if(json.getJSONObject(currentVersion).has("resources")) {
-			return new URL("https://github.com/Blizzardfur-Maxxx/MCPHackers.github.io/tree/main/versions/" + json.getJSONObject(currentVersion).getString("resources"));
+			return new URL("https://raw.githubusercontent.com/Blizzardfur-Maxxx/MCPHackers.github.io/main/versions/" + json.getJSONObject(currentVersion).getString("resources"));
 		}
 		throw new JSONException("Could not get download link for mappings");
 	}
