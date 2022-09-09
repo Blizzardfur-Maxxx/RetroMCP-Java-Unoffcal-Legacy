@@ -1,4 +1,4 @@
-package org.mcphackers.mcp.tasks;
+package org.mcphackers.mcp;
 
 public interface ProgressListener {
 	

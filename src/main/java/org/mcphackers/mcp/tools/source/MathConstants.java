@@ -7,8 +7,8 @@ import java.util.regex.Pattern;
 public class MathConstants extends Constants {
 	
 	// Used to prevent strings from being captured, such as "2.0D"
-	private static final Pattern CONSTANT_REGEX = Pattern.compile("(?<![a-zA-Z\"'])-?\\d+(?:\\.\\d+[fFdD]?|)(?![a-zA-Z\"'])");
-	private static final Map<String, String> CONSTANTS = new HashMap<>();
+	private static final Pattern _CONSTANT_REGEX = Pattern.compile("(?![\"'][.\\w\\s]*)-*\\d+\\.*\\w*(?![.\\w\\s]*[\"'])");
+	private static final Map<String, String> _CONSTANTS = new HashMap<>();
 	
 	static {
 		for (int i = 1; i <= 100; i++) {
@@ -28,11 +28,10 @@ public class MathConstants extends Constants {
 		replaceValue((double)(float)Math.PI, "(double)(float)Math.PI");
 		replaceValue(Math.PI * 2D, "Math.PI * 2D");
 		replaceValue(Math.PI / 2D, "Math.PI / 2D");
-		replaceValue(0xFFFFFF, "0xFFFFFF");
+		replaceValue(0xFFFFFF, "0xFFFFFF"); // TODO Might do this in fernflower at some point
 		replaceValue(0x20200000, "0x20200000");
 		replaceValue(0x20400000, "0x20400000");
 		replaceValue(0xFF000000, "0xFF000000");
-		replaceValue(1.0D / 256D, "1.0D / 256D");
 		replaceValue(2.0D / 256D, "2.0D / 256D");
 		replaceValue(6.0D / 256D, "6.0D / 256D");
 		replaceValue(7.0D / 256D, "7.0D / 256D");
@@ -40,31 +39,30 @@ public class MathConstants extends Constants {
 		replaceValue(9.0D / 256D, "9.0D / 256D");
 	}
 	
-	protected void replace_constants(StringBuilder source) {
-		replaceTextOfMatchGroup(source, CONSTANT_REGEX, match1 -> {
+	protected String replace_constants(String code) {
+		return Source.replaceTextOfMatchGroup(code, _CONSTANT_REGEX, match1 -> {
 			String constant = match1.group(0);
-			return CONSTANTS.getOrDefault(constant, constant);
+			return _CONSTANTS.getOrDefault(constant, constant);
 		});
 	}
 	
 	private static String floatCastedToDouble(float value) {
-		return CONSTANTS.put((double)value + "D", "(double)" + value + "F");
+		return _CONSTANTS.put((double)value + "D", "(double)" + value + "F");
 	}
 	
 	private static String replaceValue(double value, String replace) {
-		return CONSTANTS.put(value + "D", replace);
+		return _CONSTANTS.put(value + "D", replace);
 	}
 	
 	private static String replaceValue(float value, String replace) {
-		return CONSTANTS.put(value + "F", replace);
+		return _CONSTANTS.put(value + "F", replace);
 	}
 	
 	private static String replaceValue(int value, String replace) {
-		return CONSTANTS.put(String.valueOf(value), replace);
+		return _CONSTANTS.put(String.valueOf(value), replace);
 	}
 	
-	@SuppressWarnings("unused")
 	private static String replaceValue(long value, String replace) {
-		return CONSTANTS.put(value + "L", replace);
+		return _CONSTANTS.put(value + "L", replace);
 	}
 }

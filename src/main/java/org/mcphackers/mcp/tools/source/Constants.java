@@ -3,26 +3,16 @@ package org.mcphackers.mcp.tools.source;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-
 public abstract class Constants extends Source {
 	
-	/**
-	 * Replaces constants for all source files in <code>src</code> directory
-	 * @param src source directory
-	 * @param constants list of constant replacers
-	 * @throws IOException
-	 */
 	public static void replace(Path src, List<Constants> constants) throws IOException {
-		modify(src, source -> {
+		modify(src, code -> {
 			for(Constants constantReplacer : constants) {
-				constantReplacer.replace_constants(source);
+				code = constantReplacer.replace_constants(code);
 			}
+			return code;
 		});
 	}
 	
-	/**
-	 * Implementation of constant replacing behavior
-	 * @param StringBuilder of source file
-	 */
-	protected abstract void replace_constants(StringBuilder source);
+	protected abstract String replace_constants(String code);
 }

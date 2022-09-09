@@ -2,6 +2,8 @@ package org.mcphackers.mcp.tasks;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -9,32 +11,33 @@ import java.util.List;
 
 import org.mcphackers.mcp.MCP;
 import org.mcphackers.mcp.MCPPaths;
-import org.mcphackers.mcp.tasks.mode.TaskParameter;
+import org.mcphackers.mcp.ProgressListener;
+import org.mcphackers.mcp.TaskParameter;
 import org.mcphackers.mcp.tools.FileUtil;
 import org.mcphackers.mcp.tools.fernflower.Decompiler;
-import org.mcphackers.mcp.tools.injector.GLConstants;
 import org.mcphackers.mcp.tools.mappings.MappingUtil;
+import org.mcphackers.mcp.tools.mcinjector.MCInjector;
 import org.mcphackers.mcp.tools.source.Constants;
+import org.mcphackers.mcp.tools.source.GLConstants;
 import org.mcphackers.mcp.tools.source.MathConstants;
-import org.mcphackers.rdi.injector.RDInjector;
-import org.mcphackers.rdi.injector.data.ClassStorage;
-import org.mcphackers.rdi.injector.data.Mappings;
-import org.mcphackers.rdi.util.IOUtil;
 
 import codechicken.diffpatch.cli.CliOperation;
 import codechicken.diffpatch.cli.PatchOperation;
+import net.fabricmc.mappingio.tree.MemoryMappingTree;
 
-public class TaskDecompile extends TaskStaged {
-	/*
-	 * Indexes of stages for plugin overrides
-	 */
-	public static final int STAGE_INIT = 0;
-	public static final int STAGE_EXCEPTOR = 1;
-	public static final int STAGE_DECOMPILE = 2;
-	public static final int STAGE_CONSTS = 3;
-	public static final int STAGE_PATCH = 4;
-	public static final int STAGE_COPYSRC = 5;
-	public static final int STAGE_MD5 = 6;
+public class TaskDecompile extends Task {
+	private final MemoryMappingTree mappingTree = new MemoryMappingTree();
+	
+	private static final int REMAP = 1;
+	private static final int EXCEPTOR = 2;
+	private static final int DECOMPILE = 3;
+	private static final int EXTRACT = 4;
+	private static final int CONSTS = 5;
+	private static final int PATCH = 6;
+	private static final int COPYSRC = 7;
+	private static final int RECOMPILE = 8;
+	private static final int MD5 = 9;
+	private static final int STEPS = MD5;
 
 	public TaskDecompile(Side side, MCP instance) {
 		super(side, instance);
@@ -45,109 +48,98 @@ public class TaskDecompile extends TaskStaged {
 	}
 
 	@Override
-	protected Stage[] setStages() {
-		final Path rdiOut 		= MCPPaths.get(mcp, MCPPaths.REMAPPED, side);
-		final Path ffOut 		= MCPPaths.get(mcp, MCPPaths.TEMP_SRC, side);
-		final Path srcPath 		= MCPPaths.get(mcp, MCPPaths.SOURCE, side);
-		final Path patchesPath 	= MCPPaths.get(mcp, MCPPaths.PATCHES, side);
+	public void doTask() throws Exception {
+		Path tinyOut 		= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_TINY_OUT, MCPPaths.SERVER_TINY_OUT));
+		Path excOut 		= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_EXC_OUT, MCPPaths.SERVER_EXC_OUT));
+		Path exc 			= MCPPaths.get(mcp, chooseFromSide(MCPPaths.EXC_CLIENT, MCPPaths.EXC_SERVER));
+		Path srcZip 		= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_SRC, MCPPaths.SERVER_SRC));
+		Path originalJar 	= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT, MCPPaths.SERVER));
+		Path ffOut 			= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_TEMP_SOURCES, MCPPaths.SERVER_TEMP_SOURCES));
+		Path srcPath 		= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_SOURCES, MCPPaths.SERVER_SOURCES));
+		Path patchesPath 	= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_PATCHES, MCPPaths.SERVER_PATCHES));
+		Path mappings		= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_MAPPINGS, MCPPaths.SERVER_MAPPINGS));
+		Path deobfMappings	= MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_MAPPINGS_DO, MCPPaths.SERVER_MAPPINGS_DO));
+		Path javadocs		= MCPPaths.get(mcp, chooseFromSide(MCPPaths.JAVADOC_CLIENT, MCPPaths.JAVADOC_SERVER));
 		
-		boolean hasLWJGL = side == Side.CLIENT || side == Side.MERGED;
+		boolean hasLWJGL = side == Side.CLIENT;
 		
-		return new Stage[] {
-			stage(getLocalizedStage("prepare"), 0,
-			() -> {
-				FileUtil.deleteDirectoryIfExists(srcPath);
-				FileUtil.deleteDirectoryIfExists(ffOut);
-				Files.deleteIfExists(rdiOut);
-				FileUtil.createDirectories(MCPPaths.get(mcp, MCPPaths.TEMP_SIDE, side));
-			}),
-			stage(getLocalizedStage("rdi"), 2,
-			() -> {
-				RDInjector injector = new RDInjector();
-				if(side == Side.MERGED) {
-					Path path = MCPPaths.get(mcp, MCPPaths.JAR_ORIGINAL, Side.SERVER);
-					injector.setStorage(new ClassStorage(IOUtil.read(path)));
-					injector.addResources(path);
-					injector.stripLVT();
-					injector.applyMappings(getMappings(injector.getStorage(), Side.SERVER));
-					injector.transform();
-					ClassStorage serverStorage = injector.getStorage();
-					
-					path = MCPPaths.get(mcp, MCPPaths.JAR_ORIGINAL, Side.CLIENT);
-					injector.setStorage(new ClassStorage(IOUtil.read(path)));
-					injector.addResources(path);
-					injector.stripLVT();
-					injector.applyMappings(getMappings(injector.getStorage(), Side.CLIENT));
-					injector.mergeWith(serverStorage);
+		if (Files.exists(srcPath)) {
+			throw new IOException(chooseFromSide("Client", "Server") + " sources found! Aborting.");
+		}
+		for (Path path : new Path[] { tinyOut, excOut, srcZip}) {
+			Files.deleteIfExists(path);
+		}
+		FileUtil.createDirectories(MCPPaths.get(mcp, MCPPaths.TEMP));
+		FileUtil.deleteDirectoryIfExists(ffOut);
+		while(step < STEPS) {
+			step();
+			switch (step) {
+			case REMAP:
+				if (Files.exists(mappings)) {
+					MappingUtil.readMappings(mappings, mappingTree);
+					try (FileSystem fs = FileSystems.newFileSystem(originalJar, (ClassLoader)null)) {
+						MappingUtil.modifyClasses(mappingTree, fs.getPath("/"), className -> {
+							if (mappingTree.getClass(className) == null) {
+								if(className.lastIndexOf("/") < 0) {
+									return "net/minecraft/src/" + className;
+								}
+							}
+							return null;
+						});
+					}
+					MappingUtil.writeMappings(deobfMappings, mappingTree);
+					MappingUtil.remap(deobfMappings, originalJar, tinyOut, getLibraryPaths(mcp, side), "official", "named");
 				}
 				else {
-					Path path = MCPPaths.get(mcp, MCPPaths.JAR_ORIGINAL, side);
-					injector.setStorage(new ClassStorage(IOUtil.read(path)));
-					injector.addResources(path);
-					injector.stripLVT();
-					injector.applyMappings(getMappings(injector.getStorage(), side));
+					Files.copy(originalJar, tinyOut);
 				}
-				if(hasLWJGL) injector.setVisitor(new GLConstants(injector.getVisitor()));
-				injector.fixAccess();
-				injector.fixInnerClasses();
-				injector.fixImplicitConstructors();
-				//injector.guessGenerics();
-				final Path exc = MCPPaths.get(mcp, MCPPaths.EXC);
+				break;
+			case EXCEPTOR:
 				if (Files.exists(exc)) {
-					injector.fixExceptions(exc);
+					MCInjector.process(tinyOut, excOut, exc, 0);
 				}
-				injector.transform();
-				injector.write(rdiOut);
-			}),
-			stage(getLocalizedStage("decompile"),
-			() -> {
-				final Path javadocs = MCPPaths.get(mcp, MCPPaths.MAPPINGS);
-				new Decompiler(this, rdiOut, ffOut, javadocs,
-						mcp.getOptions().getStringParameter(TaskParameter.INDENTATION_STRING),
-						mcp.getOptions().getBooleanParameter(TaskParameter.DECOMPILE_OVERRIDE))
-				.decompile();
-			}),
-			stage(getLocalizedStage("constants"), 86,
-			() -> {
+				else {
+					Files.copy(tinyOut, excOut);
+				}
+				// Copying a fixed jar to libs
+				if(side == Side.CLIENT) {
+					Files.deleteIfExists(MCPPaths.get(mcp, MCPPaths.CLIENT_FIXED));
+					Files.copy(excOut, MCPPaths.get(mcp, MCPPaths.CLIENT_FIXED));
+				}
+				break;
+			case DECOMPILE:
+				 new Decompiler(this).decompile(excOut, srcZip, javadocs, mcp.getOptions().getStringParameter(TaskParameter.INDENTION_STRING));
+				break;
+			case EXTRACT:
+				FileUtil.createDirectories(MCPPaths.get(mcp, MCPPaths.SRC));
+				FileUtil.unzipByExtension(srcZip, ffOut, ".java");
+				break;
+			case CONSTS:
 				List<Constants> constants = new ArrayList<>();
-//				if(hasLWJGL)
-//				constants.add(new GLConstants());
+				if(hasLWJGL)
+					constants.add(new GLConstants());
 				constants.add(new MathConstants());
 				Constants.replace(ffOut, constants);
-			}),
-			stage(getLocalizedStage("patch"), 88,
-			() -> {
+				break;
+			case PATCH:
 				if(mcp.getOptions().getBooleanParameter(TaskParameter.PATCHES) && Files.exists(patchesPath)) {
 					patch(ffOut, ffOut, patchesPath);
 				}
-			}),
-			stage(getLocalizedStage("copysrc"), 90,
-			() -> {
-				if(!mcp.getOptions().getBooleanParameter(TaskParameter.DECOMPILE_RESOURCES)) {
-					for(Path p : FileUtil.walkDirectory(ffOut, p -> !Files.isDirectory(p) && !p.getFileName().toString().endsWith(".java"))) {
-						Files.delete(p);
-					}
-				}
+				break;
+			case COPYSRC:
 				FileUtil.deletePackages(ffOut, mcp.getOptions().getStringArrayParameter(TaskParameter.IGNORED_PACKAGES));
 				FileUtil.copyDirectory(ffOut, srcPath);
-			}),
-			stage(getLocalizedStage("recompile"),
-			() -> {
-				new TaskUpdateMD5(side, mcp, this).doTask();
-			}),
-		};
-	}
-	
-	private Mappings getMappings(ClassStorage storage, Side side) throws IOException {
-		Path mappingsPath = MCPPaths.get(mcp, MCPPaths.MAPPINGS);
-		boolean joined = MappingUtil.readNamespaces(mappingsPath).contains("official");
-		Mappings mappings = Mappings.read(mappingsPath, joined ? "official" : side.name, "named");
-		for(String name : storage.getAllClasses()) {
-			if(name.indexOf('/') == -1 && !mappings.classes.containsKey(name)) {
-				mappings.classes.put(name, "net/minecraft/src/" + name);
+				break;
+			case RECOMPILE:
+				new TaskRecompile(side, mcp, this).doTask();
+				break;
+			case MD5:
+				TaskUpdateMD5 md5Task = new TaskUpdateMD5(side, mcp, this);
+				md5Task.recompile = false;
+				md5Task.doTask();
+				break;
 			}
 		}
-		return mappings;
 	}
 
 	private void patch(Path base, Path out, Path patches) throws IOException {
@@ -162,24 +154,76 @@ public class TaskDecompile extends TaskStaged {
 		CliOperation.Result<PatchOperation.PatchesSummary> result = patchOperation.operate();
 		if (result.exit != 0) {
 			addMessage(logger.toString(), Task.INFO);
-			addMessage("Patching failed!", Task.ERROR);
+			throw new IOException("Patching failed!");
+		}
+	}
+
+	public static Path[] getLibraryPaths(MCP mcp, Side side) {
+		if(side == Side.CLIENT) {
+			return new Path[] {
+				MCPPaths.get(mcp, MCPPaths.LWJGL),
+				MCPPaths.get(mcp, MCPPaths.LWJGL_UTIL),
+				MCPPaths.get(mcp, MCPPaths.JINPUT)
+			};
+		}
+		else {
+			return new Path[] {};
 		}
 	}
 	
 	public void setProgress(int progress) {
 		switch (step) {
-		case STAGE_DECOMPILE: {
+		case DECOMPILE: {
 			int percent = (int)((double)progress * 0.8D);
 			super.setProgress(3 + percent);
 			break;
 		}
-		case STAGE_MD5: {
+		case RECOMPILE: {
+			int percent = (int)((double)progress * 0.05D);
+			super.setProgress(91 + percent);
+			break;
+		}
+		case MD5: {
 			int percent = (int)((double)progress * 0.04D);
 			super.setProgress(96 + percent);
 			break;
 		}
 		default:
 			super.setProgress(progress);
+			break;
+		}
+	}
+
+	protected void updateProgress() {
+		switch (step) {
+		case REMAP:
+			setProgress("Remapping JAR...", 1);
+			break;
+		case EXCEPTOR:
+			setProgress("Applying MCInjector...", 2);
+			break;
+		case DECOMPILE:
+			setProgress("Decompiling...");
+			break;
+		case EXTRACT:
+			setProgress("Extracting sources...", 84);
+			break;
+		case PATCH:
+			setProgress("Applying patches...", 86);
+			break;
+		case CONSTS:
+			setProgress("Replacing constants...", 88);
+			break;
+		case COPYSRC:
+			setProgress("Copying sources...", 90);
+			break;
+		case RECOMPILE:
+			setProgress("Recompiling...");
+			break;
+		case MD5:
+			break;
+		default:
+			super.updateProgress();
 			break;
 		}
 	}

@@ -1,10 +1,13 @@
 plugins {
     id 'application'
     id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'java'
 }
 
 sourceCompatibility = JavaVersion.VERSION_1_8
 targetCompatibility = JavaVersion.VERSION_1_8
+
+mainClassName = 'org.mcphackers.mcp.main.MainCLI'
 
 repositories {
     mavenCentral()
@@ -15,58 +18,120 @@ repositories {
     }
 }
 
-configurations {
-    shadow
-    implementation.extendsFrom shadow
-}
-
 dependencies {
-    // Required libraries
-    shadow "org.ow2.asm:asm:${project.asm_version}"
-    shadow "org.ow2.asm:asm-analysis:${project.asm_version}"
-    shadow "org.ow2.asm:asm-commons:${project.asm_version}"
-    shadow "org.ow2.asm:asm-tree:${project.asm_version}"
-    shadow "org.ow2.asm:asm-util:${project.asm_version}"
+    def ASMVersion = '9.2'
 
-    shadow "com.github.Lassebq:Fernflower:${project.fernflower_version}"
-    shadow "com.github.MCPHackers:RetroDebugInjector:${project.rdi_version}"
-    shadow "org.fusesource.jansi:jansi:${project.jansi_version}"
-    shadow "org.json:json:${project.json_version}"
-    shadow "com.github.MCPHackers:DiffPatch:${project.diffpatch_version}"
-    shadow "net.fabricmc:mapping-io:${project.mapping_io_version}"
+    // Required libraries
+    implementation 'org.ow2.asm:asm:' + ASMVersion
+    implementation 'org.ow2.asm:asm-analysis:' + ASMVersion
+    implementation 'org.ow2.asm:asm-commons:' + ASMVersion
+    implementation 'org.ow2.asm:asm-tree:' + ASMVersion
+    implementation 'org.ow2.asm:asm-util:' + ASMVersion
+
+    implementation 'com.github.MCPHackers:RetroFernflower:3992b4b81fe2b106f2e53dca2d7425fce72dd9f5'
+    implementation 'org.fusesource.jansi:jansi:2.4.0'
+    implementation 'net.fabricmc:tiny-remapper:0.6.0'
+    // TODO: Don't gut MCInjector bundled ASM
+    implementation name: 'mcinjector'
+    implementation 'org.json:json:20220320'
+    implementation 'com.github.MCPHackers:DiffPatch:e2473fdba3'
+    implementation 'net.fabricmc:mapping-io:0.3.0'
 }
 
 application {
     // Redirect all execution into the testing folder
-    mainClass = 'org.mcphackers.mcp.main.MainGUI'
+    mainClass = mainClassName
     executableDir = 'test'
-    mkdir(executableDir)
 }
 
-run {
-    workingDir 'test'
+shadowJar {
+    minimize()
 }
 
 runShadow {
 
 }
 
-shadowJar {
-	manifest {
-		attributes 'Main-Class': 'org.mcphackers.mcp.main.MainGUI'
-	}
-	archiveClassifier = 'GUI'
-    minimize()
+task decompile(type: JavaExec) {
+    group 'RetroMCP-Java'
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'decompile', '-debug'
 }
 
-task jarCLI(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
-	manifest {
-		attributes 'Main-Class': 'org.mcphackers.mcp.main.MainCLI'
-	}
-	archiveClassifier = 'CLI'
-	from sourceSets.main.output
-	configurations = [project.configurations.shadow]
-    minimize()
+task startClient(type: JavaExec) {
+    group 'RetroMCP-Java'
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'startclient', '-debug'
 }
 
-jar.dependsOn(jarCLI)
+task startServer(type: JavaExec) {
+    group 'RetroMCP-Java'
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'startserver', '-debug'
+}
+
+task recompile(type: JavaExec) {
+    group 'RetroMCP-Java'
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'recompile', '-debug'
+}
+
+task reobfuscate(type: JavaExec) {
+    group 'RetroMCP-Java'
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'reobfuscate', '-debug'
+}
+
+task update_md5(type: JavaExec) {
+    group 'RetroMCP-Java'
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'updatemd5', '-debug'
+}
+
+task setup(type: JavaExec) {
+    group = 'RetroMCP-Java'
+    standardInput = System.in
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'setup', '-debug'
+}
+
+task cleanup(type: JavaExec) {
+    group = 'RetroMCP-Java'
+    standardInput = System.in
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'cleanup', '-debug'
+}
+
+task createpatch(type: JavaExec) {
+    group = 'RetroMCP-Java'
+    standardInput = System.in
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set(mainClassName)
+    workingDir 'test'
+    args 'createpatch', '-debug'
+}

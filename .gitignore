@@ -9,9 +9,7 @@ build/
 # Ignore everything in testing folder
 test/*
 
-# Ignore IDE-specific files
-.classpath
-.project
+# Ignore IDE-specific folders
 .idea
 .settings
 bin

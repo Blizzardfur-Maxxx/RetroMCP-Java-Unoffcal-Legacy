@@ -1,41 +1,22 @@
 package org.mcphackers.mcp.gui;
 
+import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 
 import javax.swing.JTextArea;
 
-public class TextAreaOutputStream extends PrintStream {
+public class TextAreaOutputStream extends OutputStream {
 	private final JTextArea textArea;
 
-	public TextAreaOutputStream(JTextArea textArea, OutputStream out) {
-		super(out, true);
-		this.textArea = textArea;
+	public TextAreaOutputStream(JTextArea textArea) {
+    	this.textArea = textArea;
 	}
 
 	@Override
-	public void print(Object o) {
-		textArea.append(String.valueOf(o));
-		super.print(o);
-	}
-
-	@Override
-	public void println(Object o) {
-		super.println(o);
-		textArea.append("\n");
-		textArea.setCaretPosition(textArea.getDocument().getLength());
-	}
-
-	@Override
-	public void print(String s) {
-		textArea.append(s);
-		super.print(s);
-	}
-
-	@Override
-	public void println(String s) {
-		super.println(s);
-		textArea.append("\n");
+	public void write(int b) throws IOException {
+		// redirects data to the text area
+		textArea.append(String.valueOf((char)b));
+		// scrolls the text area to the end of data
 		textArea.setCaretPosition(textArea.getDocument().getLength());
 	}
 }

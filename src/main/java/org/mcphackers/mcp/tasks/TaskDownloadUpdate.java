@@ -10,7 +10,6 @@ import java.nio.file.Paths;
 import org.json.JSONObject;
 import org.mcphackers.mcp.MCP;
 import org.mcphackers.mcp.MCPPaths;
-import org.mcphackers.mcp.tasks.mode.TaskMode;
 import org.mcphackers.mcp.tools.FileUtil;
 import org.mcphackers.mcp.tools.Util;
 
@@ -26,11 +25,12 @@ public class TaskDownloadUpdate extends Task {
 	public void doTask() throws Exception {
 		URL updateURL = new URL(API);
 		InputStream in = updateURL.openStream();
-		JSONObject releaseJson = Util.parseJSON(in);
+		JSONObject releaseJson = Util.parseJSONFile(in);
 		String latestVersion = releaseJson.getString("tag_name");
 		String notes = releaseJson.getString("body");
 		if(!latestVersion.equals(MCP.VERSION)) {
-			boolean confirmed = mcp.updateDialogue(notes, latestVersion);
+			boolean confirmed = mcp.yesNoInput("New version found: " + latestVersion,
+					notes + "\n\nAre you sure you want to update?");
 			if(confirmed) {
 				log("Downloading update...");
 				for(Object obj : releaseJson.getJSONArray("assets")) {
@@ -39,7 +39,7 @@ public class TaskDownloadUpdate extends Task {
 						if(!assetObj.getString("name").endsWith(".jar")) {
 							continue;
 						}
-						FileUtil.downloadFile(assetObj.getString("browser_download_url"), Paths.get(MCPPaths.UPDATE_JAR));
+						FileUtil.downloadFile(new URL(assetObj.getString("browser_download_url")), Paths.get(MCPPaths.UPDATE_JAR));
 						break;
 					}
 				}
@@ -57,7 +57,6 @@ public class TaskDownloadUpdate extends Task {
 						jarPath.toString()
 					};
 					Util.runCommand(cmd);
-					System.exit(0);
 				}
 				else {
 					throw new IOException("Running from a folder! Aborting");
@@ -68,7 +67,7 @@ public class TaskDownloadUpdate extends Task {
 			}
 		}
 		else {
-			mcp.showMessage(TaskMode.UPDATE_MCP.getFullName(), MCP.TRANSLATOR.translateKey("mcp.upToDate"), Task.INFO);
+			log("Up to date!");
 		}
 	}
 }

@@ -3,45 +3,74 @@ package org.mcphackers.mcp.tools.fernflower;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-import org.mcphackers.mcp.tasks.ProgressListener;
+import org.mcphackers.mcp.ProgressListener;
 
 import de.fernflower.main.decompiler.BaseDecompiler;
 import de.fernflower.main.decompiler.DirectoryResultSaver;
+import de.fernflower.main.decompiler.SingleFileSaver;
 import de.fernflower.main.extern.IBytecodeProvider;
-import de.fernflower.main.extern.IFernflowerPreferences;
+import de.fernflower.main.extern.IResultSaver;
 import de.fernflower.util.InterpreterUtil;
 
 public class Decompiler implements IBytecodeProvider {
-	public final DecompileLogger log;
-	private final Path source;
-	private final Path destination;
-	@SuppressWarnings("unused")
-	private final File javadocs;
-	private final Map<String, Object> mapOptions = new HashMap<>();
+	public DecompileLogger log;
+	public static TinyJavadocProvider tinyJavadocProvider;
 
-	public Decompiler(ProgressListener listener, Path source, Path out, Path javadocs, String ind, boolean override) {
-		this.source = source;
-		this.destination = out;
-		this.javadocs = javadocs.toFile();
+	public Decompiler(ProgressListener listener) {
 		this.log = new DecompileLogger(listener);
-		//FIXME
-		//mapOptions.put(IFernflowerPreferences.OVERRIDE_ANNOTATION, override ? "1" : "0");
-		mapOptions.put(IFernflowerPreferences.NO_COMMENT_OUTPUT, "1");
-		mapOptions.put(IFernflowerPreferences.REMOVE_BRIDGE, "0");
-		mapOptions.put(IFernflowerPreferences.ASCII_STRING_CHARACTERS, "1");
-		mapOptions.put(IFernflowerPreferences.DECOMPILE_GENERIC_SIGNATURES, "1");
-		mapOptions.put(IFernflowerPreferences.INDENT_STRING, ind);
 	}
 
-	public void decompile() throws IOException {
-		BaseDecompiler decompiler = new BaseDecompiler(this, new DirectoryResultSaver(destination.toFile()), mapOptions, log/*, javadocs.exists() ? new TinyJavadocProvider(javadocs) : null*/);
-		decompiler.addSpace(source.toAbsolutePath().toFile(), true);
+	public void decompile(Path source, Path out, Path javadocs, String ind) throws IOException {
+		Map<String, Object> mapOptions = new HashMap<>();
+		mapOptions.put("rbr", "0");
+		mapOptions.put("asc", "1");
+		mapOptions.put("nco", "1");
+		mapOptions.put("ind", ind);
+
+		SaveType saveType = SaveType.FOLDER;
+		File destination = out.toFile();
+		  if (destination.getName().contains(".zip") || destination.getName().contains(".jar")) {
+			saveType = SaveType.FILE;
+	
+			if (destination.getParentFile() != null) {
+			  destination.getParentFile().mkdirs();
+			}
+		  } else {
+			destination.mkdirs();
+		  }
+		List<File> lstSources = new ArrayList<>();
+		addPath(lstSources, source.toString());
+
+		if (lstSources.isEmpty()) {
+			throw new IOException("No sources found");
+		}
+		File jdFile = javadocs.toFile();
+		tinyJavadocProvider = jdFile.exists() ? new TinyJavadocProvider(jdFile) : null;
+		BaseDecompiler decompiler = new BaseDecompiler(this, saveType.getSaver().apply(destination), mapOptions, log, tinyJavadocProvider);
+		try {
+			for (File source2 : lstSources) {
+				decompiler.addSpace(source2, true);
+			}
+		} catch (IOException ex) {
+			ex.printStackTrace();
+		}
+
 		decompiler.decompileContext();
+	}
+
+	private static void addPath(List<File> list, String path) {
+		File file = new File(path);
+		if (file.exists()) {
+			list.add(file);
+		}
 	}
 
 	@Override
@@ -58,5 +87,21 @@ public class Decompiler implements IBytecodeProvider {
 				return InterpreterUtil.getBytes(archive, entry);
 			}
 		}
+	}
+
+	public enum SaveType {
+	  FOLDER(DirectoryResultSaver::new),
+	  FILE(SingleFileSaver::new);
+
+	  private final Function<File, IResultSaver> saver;
+
+	  SaveType(Function<File, IResultSaver> saver) {
+
+		this.saver = saver;
+	  }
+
+	  public Function<File, IResultSaver> getSaver() {
+		return saver;
+	  }
 	}
 }

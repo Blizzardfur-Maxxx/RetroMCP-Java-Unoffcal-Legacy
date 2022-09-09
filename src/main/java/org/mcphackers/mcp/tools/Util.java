@@ -1,19 +1,16 @@
 package org.mcphackers.mcp.tools;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.awt.Desktop;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -21,16 +18,9 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import net.fabricmc.mappingio.adapter.MappingNsCompleter;
-import net.fabricmc.mappingio.adapter.MappingSourceNsSwitch;
-import net.fabricmc.mappingio.format.Tiny2Reader;
-import net.fabricmc.mappingio.format.Tiny2Writer;
-import net.fabricmc.mappingio.tree.MemoryMappingTree;
+import java.util.Map.Entry;
+import java.util.Scanner;
+import java.util.concurrent.TimeUnit;
 
 public abstract class Util {
 
@@ -40,18 +30,24 @@ public abstract class Util {
 			procBuilder.directory(dir.toAbsolutePath().toFile());
 		}
 		Process proc = procBuilder.start();
+		new Thread(() -> {
+			try(Scanner sc = new Scanner(proc.getInputStream())) {
+				while (sc.hasNextLine()) {
+					System.out.println(sc.nextLine());
+				}
+			}
+		}).start();
 		Thread hook = new Thread(proc::destroy);
 		if(killOnShutdown) {
 			Runtime.getRuntime().addShutdownHook(hook);
 		}
-		BufferedReader err = new BufferedReader(new InputStreamReader(proc.getErrorStream()));
-		BufferedReader in = new BufferedReader(new InputStreamReader(proc.getInputStream()));
 		while(proc.isAlive()) {
-			while(in.ready()) System.out.println(in.readLine());
-			while(err.ready()) System.err.println(err.readLine());
+			try(Scanner sc = new Scanner(proc.getErrorStream())) {
+				while (sc.hasNextLine()) {
+					System.out.println(sc.nextLine());
+				}
+			}
 		}
-		in.close();
-		err.close();
 		if(killOnShutdown) {
 			Runtime.getRuntime().removeShutdownHook(hook);
 		}
@@ -63,63 +59,9 @@ public abstract class Util {
 		procBuilder.start();
 	}
 	
-	//official named -> named client server
-	public static void mergeMappings(Path client, Path server, Path out) throws IOException {
-		MemoryMappingTree clientTree = new MemoryMappingTree();
-		MemoryMappingTree serverTree = new MemoryMappingTree();
-		try (BufferedReader reader = Files.newBufferedReader(client)) {
-			Tiny2Reader.read(reader, clientTree);
-		}
-		try (BufferedReader reader = Files.newBufferedReader(server)) {
-			Tiny2Reader.read(reader, serverTree);
-		}
-		clientTree.setSrcNamespace("client");
-		serverTree.setSrcNamespace("server");
-		MemoryMappingTree namedClientTree = new MemoryMappingTree();
-		{
-			Map<String, String> namespaces = new HashMap<>();
-			namespaces.put("named", "client");
-			MappingNsCompleter nsCompleter = new MappingNsCompleter(namedClientTree, namespaces);
-			MappingSourceNsSwitch nsSwitch = new MappingSourceNsSwitch(nsCompleter, "named");
-			clientTree.accept(nsSwitch);
-		}
-		MemoryMappingTree namedServerTree = new MemoryMappingTree();
-		{
-			Map<String, String> namespaces = new HashMap<>();
-			namespaces.put("named", "server");
-			MappingNsCompleter nsCompleter = new MappingNsCompleter(namedServerTree, namespaces);
-			MappingSourceNsSwitch nsSwitch = new MappingSourceNsSwitch(nsCompleter, "named");
-			serverTree.accept(nsSwitch);
-		}
-		namedServerTree.accept(namedClientTree);
-		try(Tiny2Writer writer = new Tiny2Writer(Files.newBufferedWriter(out), false)) {
-			namedClientTree.accept(writer);
-		}
-	}
-	
-	//official named -> named client
-	public static void mergeMappings(Path client, Path out) throws IOException {
-		MemoryMappingTree clientTree = new MemoryMappingTree();
-		try (BufferedReader reader = Files.newBufferedReader(client)) {
-			Tiny2Reader.read(reader, clientTree);
-		}
-		clientTree.setSrcNamespace("client");
-		MemoryMappingTree namedClientTree = new MemoryMappingTree();
-		{
-			Map<String, String> namespaces = new HashMap<>();
-			namespaces.put("named", "client");
-			MappingNsCompleter nsCompleter = new MappingNsCompleter(namedClientTree, namespaces);
-			MappingSourceNsSwitch nsSwitch = new MappingSourceNsSwitch(nsCompleter, "named");
-			clientTree.accept(nsSwitch);
-		}
-		try(Tiny2Writer writer = new Tiny2Writer(Files.newBufferedWriter(out), false)) {
-			namedClientTree.accept(writer);
-		}
-	}
-	
-	public static void copyToClipboard(String text) {
-		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
-	}
+    public static void copyToClipboard(String text) {
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
+    }
 
 	public static Thread operateOnThread(Runnable function) {
 		Thread thread = new Thread(function);
@@ -127,26 +69,31 @@ public abstract class Util {
 		return thread;
 	}
 
-	public static void openUrl(String url) {
-		try {
-			switch (OS.getOs()) {
-				case linux:
-					new ProcessBuilder("/usr/bin/env", "xdg-open", url).start();
-					break;
-				default:
-					if (Desktop.isDesktopSupported()) {
-						Desktop desktop = Desktop.getDesktop();
-						desktop.browse(new URI(url));
-					}
-			}
-		} catch (IOException ex) {
-			throw new RuntimeException(ex);
-		} catch (URISyntaxException ex) {
-			throw new IllegalArgumentException(ex);
-		}
+    public static void openUrl(String url) {
+        try {
+            switch (Os.getOs()) {
+                case LINUX:
+                    new ProcessBuilder("/usr/bin/env", "xdg-open", url).start();
+                    break;
+                default:
+                    if (Desktop.isDesktopSupported()) {
+                        Desktop desktop = Desktop.getDesktop();
+                        desktop.browse(new URI(url));
+                    }
+            }
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        } catch (URISyntaxException ex) {
+            throw new IllegalArgumentException(ex);
+        }
+    }
+	
+	public static String time(long time) {
+		long seconds = TimeUnit.MILLISECONDS.toSeconds(time);
+		long milliseconds = TimeUnit.MILLISECONDS.toMillis(time) - TimeUnit.SECONDS.toMillis(TimeUnit.MILLISECONDS.toSeconds(time));
+		return seconds + "s " + milliseconds + "ms";
 	}
 	
-	@Deprecated
 	public static Map<String, Object> jsonToMap(JSONObject jsonobj)  throws JSONException {
 		Map<String, Object> map = new HashMap<>();
 		Iterator<String> keys = jsonobj.keys();
@@ -162,7 +109,6 @@ public abstract class Util {
 		}   return map;
 	}
 
-	@Deprecated
 	public static List<Object> jsonToList(JSONArray array) throws JSONException {
 		List<Object> list = new ArrayList<>();
 		for(int i = 0; i < array.length(); i++) {
@@ -183,7 +129,7 @@ public abstract class Util {
 		return new JSONObject(content);
 	}
 
-	public static JSONObject parseJSON(InputStream stream) throws JSONException, IOException {
+	public static JSONObject parseJSONFile(InputStream stream) throws JSONException, IOException {
 		byte[] bytes = readAllBytes(stream);
 		String content = new String(bytes);
 		return new JSONObject(content);
@@ -221,52 +167,24 @@ public abstract class Util {
 		}
 	}
 
-	public static String getMD5(Path file) throws IOException {
-		try {
-			MessageDigest md = MessageDigest.getInstance("MD5");
-			InputStream fs = Files.newInputStream(file);
-			BufferedInputStream bs = new BufferedInputStream(fs);
-			byte[] buffer = new byte[1024];
-			int bytesRead;
-	
-			while ((bytesRead = bs.read(buffer, 0, buffer.length)) != -1) {
-				md.update(buffer, 0, bytesRead);
-			}
-			byte[] digest = md.digest();
-	
-			StringBuilder sb = new StringBuilder();
-			for (byte bite : digest) {
-				sb.append(String.format("%02x", bite & 0xff));
-			}
-			bs.close();
-			return sb.toString();
-		} catch (NoSuchAlgorithmException e) {
-			throw new IOException(e);
-		}
-	}
+	public static String getMD5OfFile(Path file) throws IOException, NoSuchAlgorithmException {
+		MessageDigest md = MessageDigest.getInstance("MD5");
+		InputStream fs = Files.newInputStream(file);
+		BufferedInputStream bs = new BufferedInputStream(fs);
+		byte[] buffer = new byte[1024];
+		int bytesRead;
 
-	public static String getSHA1(Path file) throws IOException {
-		try {
-			MessageDigest md = MessageDigest.getInstance("SHA-1");
-			InputStream fs = Files.newInputStream(file);
-			BufferedInputStream bs = new BufferedInputStream(fs);
-			byte[] buffer = new byte[1024];
-			int bytesRead;
-	
-			while ((bytesRead = bs.read(buffer, 0, buffer.length)) != -1) {
-				md.update(buffer, 0, bytesRead);
-			}
-			byte[] digest = md.digest();
-	
-			StringBuilder sb = new StringBuilder();
-			for (byte bite : digest) {
-				sb.append(Integer.toString((bite & 255) + 256, 16).substring(1).toLowerCase());
-			}
-			bs.close();
-			return sb.toString();
-		} catch (NoSuchAlgorithmException e) {
-			throw new IOException(e);
+		while ((bytesRead = bs.read(buffer, 0, buffer.length)) != -1) {
+			md.update(buffer, 0, bytesRead);
 		}
+		byte[] digest = md.digest();
+
+		StringBuilder sb = new StringBuilder();
+		for (byte bite : digest) {
+			sb.append(String.format("%02x", bite & 0xff));
+		}
+		bs.close();
+		return sb.toString();
 	}
 	
 	public static String convertFromEscapedString(String s) {
@@ -275,6 +193,15 @@ public abstract class Util {
 	
 	public static String convertToEscapedString(String s) {
 		return s.replace("\n", "\\n").replace("\t", "\\t");
+	}
+	
+	public static <K, V> K getKey(Map<K, V> map, V value) {
+		for (Entry<K, V> entry : map.entrySet()) {
+			if (entry.getValue() != null && entry.getValue().equals(value)) {
+				return entry.getKey();
+			}
+		}
+		return null;
 	}
 
 	public static String getJava() {
