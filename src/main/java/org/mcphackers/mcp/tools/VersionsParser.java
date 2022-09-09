@@ -18,7 +18,7 @@ import org.mcphackers.mcp.MCPConfig;
 
 public class VersionsParser {
 	
-	private static final String jsonURL = "https://mcphackers.github.io/versions/versions.json";
+	private static final String jsonURL = "https://raw.githubusercontent.com/Blizzardfur-Maxxx/MCPHackers.github.io/main/versions/versions.json";
 	private static String currentVersion = "unknown";
 	private static Exception cause = null;
 	
@@ -84,7 +84,7 @@ public class VersionsParser {
 	public static URL downloadVersion() throws Exception {
 		checkJson();
 		if(json.getJSONObject(currentVersion).has("resources")) {
-			return new URL("https://mcphackers.github.io/versions/" + json.getJSONObject(currentVersion).getString("resources"));
+			return new URL("https://raw.githubusercontent.com/Blizzardfur-Maxxx/MCPHackers.github.io/main/versions/" + json.getJSONObject(currentVersion).getString("resources"));
 		}
 		throw new JSONException("Could not get download link for mappings");
 	}
