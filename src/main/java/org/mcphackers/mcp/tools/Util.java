@@ -3,13 +3,9 @@ package org.mcphackers.mcp.tools;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.mcphackers.mcp.MCP;
 
-import java.awt.Desktop;
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
 import java.io.*;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,34 +18,33 @@ import java.util.Map.Entry;
 import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 
-public abstract class Util {
+public class Util {
 
-	public static int runCommand(String[] cmd, Path dir, boolean killOnShutdown) throws IOException {
+	public static int runCommand(String[] cmd, Path dir, boolean doLog) throws IOException, InterruptedException {
 		ProcessBuilder procBuilder = new ProcessBuilder(cmd);
 		if(dir != null) {
 			procBuilder.directory(dir.toAbsolutePath().toFile());
 		}
 		Process proc = procBuilder.start();
-		new Thread(() -> {
-			try(Scanner sc = new Scanner(proc.getInputStream())) {
-				while (sc.hasNextLine()) {
-					System.out.println(sc.nextLine());
+		new Thread() {
+			public void run() {
+				if(doLog) {
+					try(Scanner sc = new Scanner(proc.getInputStream())) {
+						while (sc.hasNextLine()) {
+							MCP.logger.info(sc.nextLine());
+						}
+					}
 				}
 			}
-		}).start();
-		Thread hook = new Thread(proc::destroy);
-		if(killOnShutdown) {
-			Runtime.getRuntime().addShutdownHook(hook);
-		}
+		}.start();
 		while(proc.isAlive()) {
-			try(Scanner sc = new Scanner(proc.getErrorStream())) {
-				while (sc.hasNextLine()) {
-					System.out.println(sc.nextLine());
+			if(doLog) {
+				try(Scanner sc = new Scanner(proc.getErrorStream())) {
+					while (sc.hasNextLine()) {
+						MCP.logger.info(sc.nextLine());
+					}
 				}
 			}
-		}
-		if(killOnShutdown) {
-			Runtime.getRuntime().removeShutdownHook(hook);
 		}
 		return proc.exitValue();
 	}
@@ -58,35 +53,24 @@ public abstract class Util {
 		ProcessBuilder procBuilder = new ProcessBuilder(cmd);
 		procBuilder.start();
 	}
-	
-    public static void copyToClipboard(String text) {
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
-    }
 
-	public static Thread operateOnThread(Runnable function) {
-		Thread thread = new Thread(function);
-		thread.start();
-		return thread;
+	public static OS getOperatingSystem() {
+		String osName = System.getProperty("os.name").toLowerCase();
+		return osName.contains("win") ? OS.windows
+			: (osName.contains("mac") ? OS.macos
+			: (osName.contains("solaris") ? OS.linux
+			: (osName.contains("sunos") ? OS.linux
+			: (osName.contains("linux") ? OS.linux
+			: (osName.contains("unix") ? OS.linux
+			: OS.unknown)))));
 	}
-
-    public static void openUrl(String url) {
-        try {
-            switch (Os.getOs()) {
-                case LINUX:
-                    new ProcessBuilder("/usr/bin/env", "xdg-open", url).start();
-                    break;
-                default:
-                    if (Desktop.isDesktopSupported()) {
-                        Desktop desktop = Desktop.getDesktop();
-                        desktop.browse(new URI(url));
-                    }
-            }
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        } catch (URISyntaxException ex) {
-            throw new IllegalArgumentException(ex);
-        }
-    }
+	
+	public enum OS {
+		windows,
+		linux,
+		macos,
+		unknown
+	}
 	
 	public static String time(long time) {
 		long seconds = TimeUnit.MILLISECONDS.toSeconds(time);
@@ -95,7 +79,7 @@ public abstract class Util {
 	}
 	
 	public static Map<String, Object> jsonToMap(JSONObject jsonobj)  throws JSONException {
-		Map<String, Object> map = new HashMap<>();
+		Map<String, Object> map = new HashMap<String, Object>();
 		Iterator<String> keys = jsonobj.keys();
 		while(keys.hasNext()) {
 			String key = keys.next();
@@ -110,7 +94,7 @@ public abstract class Util {
 	}
 
 	public static List<Object> jsonToList(JSONArray array) throws JSONException {
-		List<Object> list = new ArrayList<>();
+		List<Object> list = new ArrayList<Object>();
 		for(int i = 0; i < array.length(); i++) {
 			Object value = array.get(i);
 			if (value instanceof JSONArray) {
@@ -167,9 +151,9 @@ public abstract class Util {
 		}
 	}
 
-	public static String getMD5OfFile(Path file) throws IOException, NoSuchAlgorithmException {
+	public static String getMD5OfFile(File file) throws IOException, NoSuchAlgorithmException {
 		MessageDigest md = MessageDigest.getInstance("MD5");
-		InputStream fs = Files.newInputStream(file);
+		FileInputStream fs = new FileInputStream(file);
 		BufferedInputStream bs = new BufferedInputStream(fs);
 		byte[] buffer = new byte[1024];
 		int bytesRead;
@@ -185,14 +169,6 @@ public abstract class Util {
 		}
 		bs.close();
 		return sb.toString();
-	}
-	
-	public static String convertFromEscapedString(String s) {
-		return s.replace("\\n", "\n").replace("\\t", "\t");
-	}
-	
-	public static String convertToEscapedString(String s) {
-		return s.replace("\n", "\\n").replace("\t", "\\t");
 	}
 	
 	public static <K, V> K getKey(Map<K, V> map, V value) {

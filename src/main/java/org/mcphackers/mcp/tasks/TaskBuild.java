@@ -2,40 +2,45 @@ package org.mcphackers.mcp.tasks;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 import org.mcphackers.mcp.MCP;
-import org.mcphackers.mcp.MCPPaths;
-import org.mcphackers.mcp.TaskParameter;
+import org.mcphackers.mcp.MCPConfig;
+import org.mcphackers.mcp.ProgressInfo;
+import org.mcphackers.mcp.tasks.info.TaskInfo;
 import org.mcphackers.mcp.tools.FileUtil;
 
 public class TaskBuild extends Task {
+
+	private TaskReobfuscate reobfTask;
 
 	private static final int REOBF = 1;
 	private static final int BUILD = 2;
 	private static final int STEPS = 2;
 
-	public TaskBuild(Side side, MCP instance) {
-		super(side, instance);
+	public TaskBuild(int side, TaskInfo info) {
+		super(side, info);
+		reobfTask = new TaskReobfuscate(side, info);
 	}
 
 	@Override
 	public void doTask() throws Exception {
-		Path originalJar =  MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT, 			MCPPaths.SERVER));
-		Path bin = 			MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_BIN, 		MCPPaths.SERVER_BIN));
-		Path reobfDir = 	MCPPaths.get(mcp, chooseFromSide(MCPPaths.CLIENT_REOBF, 	MCPPaths.SERVER_REOBF));
-		Path buildJar = 	MCPPaths.get(mcp, chooseFromSide(MCPPaths.BUILD_JAR_CLIENT, MCPPaths.BUILD_JAR_SERVER));
-		Path buildZip = 	MCPPaths.get(mcp, chooseFromSide(MCPPaths.BUILD_ZIP_CLIENT, MCPPaths.BUILD_ZIP_SERVER));
+		Path originalJar =  Paths.get(chooseFromSide(MCPConfig.CLIENT, 			MCPConfig.SERVER));
+		Path bin = 			Paths.get(chooseFromSide(MCPConfig.CLIENT_BIN, 		MCPConfig.SERVER_BIN));
+		Path reobfDir = 	Paths.get(chooseFromSide(MCPConfig.CLIENT_REOBF, 	MCPConfig.SERVER_REOBF));
+		Path buildJar = 	Paths.get(chooseFromSide(MCPConfig.BUILD_JAR_CLIENT, MCPConfig.BUILD_JAR_SERVER));
+		Path buildZip = 	Paths.get(chooseFromSide(MCPConfig.BUILD_ZIP_CLIENT, MCPConfig.BUILD_ZIP_SERVER));
 		
 		while(step < STEPS) {
 			step();
 			switch (step) {
 			case REOBF:
-				new TaskReobfuscate(side, mcp, this).doTask();
+				this.reobfTask.doTask();
 				break;
 			case BUILD:
-				FileUtil.createDirectories(MCPPaths.get(mcp,MCPPaths.BUILD));
-				if(mcp.getOptions().getBooleanParameter(TaskParameter.FULL_BUILD)) {
+				FileUtil.createDirectories(Paths.get(MCPConfig.BUILD));
+				if(MCP.config.fullBuild) {
 					Files.deleteIfExists(buildJar);
 					Files.copy(originalJar, buildJar);
 					List<Path> reobfClasses = FileUtil.walkDirectory(reobfDir, path -> !Files.isDirectory(path));
@@ -55,30 +60,21 @@ public class TaskBuild extends Task {
 			}
 		}
 	}
-	
-	public void setProgress(int progress) {
-		switch (step) {
-		case 1: {
-			int percent = (int)((double)progress * 0.49D);
-			super.setProgress(1 + percent);
-			break;
-		}
-		default:
-			super.setProgress(progress);
-			break;
-		}
-	}
 
-	protected void updateProgress() {
+	public ProgressInfo getProgress() {
+		int total = 100;
+		int current = 0;
 		switch (step) {
-		case REOBF:
-			break;
+		case REOBF: {
+			current = 1;
+			ProgressInfo info = reobfTask.getProgress();
+			int percent = (int) ((double)info.getCurrent() / info.getTotal() * 49);
+			return new ProgressInfo(info.getMessage(), current + percent, total); }
 		case BUILD:
-			setProgress("Building...", 52);
-			break;
+			current = 52;
+			return new ProgressInfo("Building...", current, total);
 		default:
-			super.updateProgress();
-			break;
+			return super.getProgress();
 		}
 	}
 }

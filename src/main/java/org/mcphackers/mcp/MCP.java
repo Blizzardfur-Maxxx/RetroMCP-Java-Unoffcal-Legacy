@@ -1,233 +1,296 @@
 package org.mcphackers.mcp;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import org.mcphackers.mcp.plugin.MCPPlugin;
-import org.mcphackers.mcp.plugin.MCPPlugin.MCPEvent;
-import org.mcphackers.mcp.plugin.MCPPlugin.TaskEvent;
-import org.mcphackers.mcp.tasks.Task;
-import org.mcphackers.mcp.tasks.Task.Side;
-import org.mcphackers.mcp.tools.ClassUtils;
-import org.mcphackers.mcp.tools.FileUtil;
+import jredfox.selfcmd.SelfCommandPrompt;
+import org.fusesource.jansi.Ansi;
+import org.fusesource.jansi.AnsiConsole;
+import org.mcphackers.mcp.tasks.info.TaskInfo;
 import org.mcphackers.mcp.tools.Util;
 import org.mcphackers.mcp.tools.VersionsParser;
 
-public abstract class MCP {
-	
-	public static final String VERSION = "v1.0-pre1";
-	private static final Map<String, MCPPlugin> plugins = new HashMap<>();
-	
-	static {
-		Update.attemptToDeleteUpdateJar();
-		loadPlugins();
-	}
-	
-	protected MCP() {
-		triggerEvent(MCPEvent.ENV_STARTUP);
-	}
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.*;
 
-	public void performTask(TaskMode mode, Side side) {
-		performTask(mode, side, true, true);
-	}
+public class MCP {
 	
-	public abstract Path getWorkingDir();
-	
-	public final void performTask(TaskMode mode, Side side, boolean enableProgressBars, boolean enableCompletionMessage) {
-		List<Task> tasks = mode.getTasks(this);
-		if(tasks.size() == 0) {
-			System.err.println("Performing 0 tasks");
-			return;
-		}
-		
-		boolean hasServer = true;
-		try {
-			hasServer = VersionsParser.hasServer(getCurrentVersion());
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		List<Task> performedTasks = new ArrayList<>();
-		for (Task task : tasks) {
-			if (side == Side.ANY) {
-				// TODO also check if client/server exists locally
-				if (task.side != Side.SERVER || hasServer) {
-					performedTasks.add(task);
-				}
-			} else if (task.side == side || task.side == Side.ANY) {
-				performedTasks.add(task);
-			}
-		}
-		if(enableProgressBars) setProgressBars(performedTasks, mode);
-		ExecutorService pool = Executors.newFixedThreadPool(2);
-		setActive(false);
-		triggerEvent(MCPEvent.STARTED_TASKS);
+	public static final String VERSION = "v0.3";
+	public static EnumMode mode = null;
+	public static EnumMode helpCommand = null;
+	public static MCPLogger logger;
+	public static MCPConfig config;
+	public static Scanner input;
+	private static final Ansi logo =
+			new Ansi()
+			.fgCyan().a("  _____      _             ").fgYellow().a("__  __  _____ _____  ").a('\n')
+			.fgCyan().a(" |  __ \\    | |           ").fgYellow().a("|  \\/  |/ ____|  __ \\ ").a('\n')
+			.fgCyan().a(" | |__) |___| |_ _ __ ___ ").fgYellow().a("| \\  / | |    | |__) |").a('\n')
+			.fgCyan().a(" |  _  // _ \\ __| '__/ _ \\").fgYellow().a("| |\\/| | |    |  ___/ ").a('\n')
+			.fgCyan().a(" | | \\ \\  __/ |_| | | (_) ").fgYellow().a("| |  | | |____| |     ").a('\n')
+			.fgCyan().a(" |_|  \\_\\___|\\__|_|  \\___/").fgYellow().a("|_|  |_|\\_____|_|     ").a('\n')
+			.fgDefault();
 
-		AtomicInteger result1 = new AtomicInteger(Task.INFO);
-		
-		for(int i = 0; i < performedTasks.size(); i++) {
-			Task task = performedTasks.get(i);
-			final int barIndex = i;
-			if(enableProgressBars) {
-				task.setProgressBarIndex(barIndex);
-			}
-			pool.execute(() -> {
-				try {
-					task.performTask();
-				} catch (Exception e) {
-					result1.set(Task.ERROR);
-					e.printStackTrace();
-				}
-				if(enableProgressBars) {
-					setProgress(barIndex, "Finished!", 100);
-				}
-			});
-		}
-		pool.shutdown();
-		while (!pool.isTerminated()) {}
-
-		byte result = result1.byteValue();
-		
-		List<String> msgs = new ArrayList<>();
-		for(Task task : performedTasks) {
-			msgs.addAll(task.getMessageList());
-			byte retresult = task.getResult();
-			if(retresult > result) {
-				result = retresult;
-			}
-		}
-		//TODO display this info in the pop up message
-		if(msgs.size() > 0) log("");
-		for(String msg : msgs) {
-			log(msg);
-		}
-		triggerEvent(MCPEvent.FINISHED_TASKS);
-		if(enableCompletionMessage) {
-			String[] msgs2 = {"Finished successfully!", "Finished with warnings!", "Finished with errors!"};
-			showMessage(mode.getFullName(), msgs2[result], result);
-		}
-		setActive(true);
-		if(enableProgressBars) clearProgressBars();
-	}
-	
-	public abstract void setProgressBars(List<Task> tasks, TaskMode mode);
-	
-	public abstract void clearProgressBars();
-
-	public abstract void log(String msg);
-	
-	public abstract Options getOptions();
-	
-	public abstract String getCurrentVersion();
-	
-	public abstract void setCurrentVersion(String version);
-	
-	public abstract void setProgress(int barIndex, String progressMessage);
-	
-	public abstract void setProgress(int barIndex, int progress);
-	
-	public abstract void setActive(boolean active);
-
-	public abstract boolean yesNoInput(String title, String msg);
-	
-	public abstract String inputString(String title, String msg);
-	
-	public abstract void showMessage(String title, String msg, int type);
-	
-	public void setProgress(int barIndex, String progressMessage, int progress) {
-		setProgress(barIndex, progress);
-		setProgress(barIndex, progressMessage);
-	}
-	
-	public void setParameter(TaskParameter param, Object value) throws IllegalArgumentException {
-		getOptions().setParameter(param, value);
-	}
-	
-	public void safeSetParameter(TaskParameter param, String value) {
-		if(value != null) {
-			if(param.type == Integer.class) {
-				try {
-					int valueInt = Integer.parseInt(value);
-					setParameter(param, valueInt);
-					return;
-				}
-				catch (NumberFormatException ignored) {}
-				catch (IllegalArgumentException e) {}
-			}
-			else if(param.type == Boolean.class) {
-				if(value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
-					try {
-						boolean valueBoolean = Boolean.parseBoolean(value);
-						setParameter(param, valueBoolean);
-						return;
-					}
-					catch (IllegalArgumentException e) {}
-				}
-			}
-			else if(param.type == String[].class) {
-				try {
-					String[] values = value.split(",");
-					for(int i2 = 0 ; i2 < values.length; i2++) {
-						values[i2] = Util.convertFromEscapedString(values[i2]).trim();
-					}
-					setParameter(param, values);
-					return;
-				}
-				catch (IllegalArgumentException e) {}
-			}
-			else if(param.type == String.class) {
-				try {
-					value = Util.convertFromEscapedString(value);
-					setParameter(param, value);
-					return;
-				}
-				catch (IllegalArgumentException e) {}
-			}
-			showMessage(param.desc, "Invalid value!", Task.ERROR);
-		}
-	}
-
-    private final static void loadPlugins() {
-    	Path pluginsDir = Paths.get("plugins");
-    	if(Files.exists(pluginsDir)) {
-        	List<Path> jars = new ArrayList<>();
+	private static void attemptToDeleteUpdateJar() {
+		long startTime = System.currentTimeMillis();
+		boolean keepTrying = true;
+		while(keepTrying) {
 			try {
-				FileUtil.collectJars(pluginsDir, jars);
+				Files.deleteIfExists(Paths.get(MCPConfig.UPDATE_JAR));
+				keepTrying = false;
 			} catch (IOException e) {
-				e.printStackTrace();
+				keepTrying = System.currentTimeMillis() - startTime < 10000;
 			}
-	    	try {
-	    		for(Path p : jars) {
-					List<Class<MCPPlugin>> classes = ClassUtils.getClasses(p, MCPPlugin.class);
-					for(Class<MCPPlugin> cls : classes) {
-						MCPPlugin plugin = cls.newInstance();
-						plugin.init();
-						plugins.put(plugin.pluginId(), plugin);
-					}
-	    		}
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		SelfCommandPrompt.runWithCMD(SelfCommandPrompt.suggestAppId(), "RetroMCP " + VERSION, args, false, false);
+		attemptToDeleteUpdateJar();
+		AnsiConsole.systemInstall();
+		logger = new MCPLogger();
+		config = new MCPConfig();
+		input = new Scanner(System.in);
+		logger.log("Operating system: " + System.getProperty("os.name"));
+		logger.log("RetroMCP " + VERSION);
+
+		boolean startedWithNoParams = false;
+		boolean exit = false;
+		String version = null;
+		if(Files.exists(Paths.get(MCPConfig.VERSION))) {
+			try {
+				VersionsParser.setCurrentVersion(new String(Files.readAllBytes(Paths.get(MCPConfig.VERSION))));
+				version = new Ansi().a("Current version: ").fgBrightCyan().a(VersionsParser.getCurrentVersion()).fgDefault().toString();
 			} catch (Exception e) {
-				e.printStackTrace();
+				version = new Ansi().fgBrightRed().a("Unable to get current version!").fgDefault().toString();
 			}
-    	}
-    }
-    
-    public final void triggerEvent(MCPEvent event) {
-    	for(Map.Entry<String, MCPPlugin> entry : plugins.entrySet()) {
-    		entry.getValue().onMCPEvent(event, this);
-    	}
-    }
-    
-    public final void triggerTaskEvent(TaskEvent event, Task task) {
-    	for(Map.Entry<String, MCPPlugin> entry : plugins.entrySet()) {
-    		entry.getValue().onTaskEvent(event, task);
-    	}
-    }
+		}
+		if (args.length <= 0) {
+			startedWithNoParams = true;
+			logger.println(logo);
+			JavaCompiler c = ToolProvider.getSystemJavaCompiler();
+			if (c == null) {
+				// Likely a JRE
+				logger.println(new Ansi().fgBrightRed().a("Error: Java Development Kit not detected! Compilation will fail!").toString());
+				logger.println("Using Java from " + Paths.get(Util.getJava()).toAbsolutePath());
+			}
+			if(version != null) logger.info(version);
+			logger.println(new Ansi().fgDefault().a("Enter a command to execute:").toString());
+		}
+		int executeTimes = 0;
+		while (startedWithNoParams && !exit || !startedWithNoParams && executeTimes < 1) {
+			while (args.length < 1) {
+				logger.print(new Ansi().fgBrightCyan().a("> ").fgRgb(255,255,255));
+				String str = "";
+				try {
+					str = input.nextLine();
+				} catch (NoSuchElementException ignored) {}
+				logger.print(new Ansi().fgDefault());
+				args = str.split(" ");
+			}
+			boolean taskMode = setMode(args[0]);
+			Map<String, Object> parsedArgs = new HashMap<>();
+			for (int index = 1; index < args.length; index++) {
+				parseArg(args[index], parsedArgs);
+			}
+			setParams(parsedArgs, mode);
+			if (taskMode) {
+				if(mode == EnumMode.startclient || mode == EnumMode.startserver) {
+					config.runArgs = args;
+				}
+				start();
+			} else if (mode == EnumMode.help) {
+				if(helpCommand == null) {
+					for (EnumMode mode : EnumMode.values()) {
+						logger.println(new Ansi()
+								.fgBrightMagenta().a(" - " + String.format("%-12s", mode.name())).fgDefault()
+								.fgGreen().a(" ").a(mode.desc).fgDefault());
+					}
+				}
+				else {
+					logger.println(new Ansi().fgBrightMagenta().a(" - " + String.format("%-12s", helpCommand.name())).fgDefault().fgGreen().a(" ").a(helpCommand.desc).fgDefault());
+					if(helpCommand.params.length > 0) logger.println("Optional parameters:");
+					for(String param : helpCommand.params) {
+						logger.println(new Ansi().a(" ").fgCyan().a(String.format("%-10s", param)).a(" - ").fgBrightYellow().a(EnumMode.getParamDesc(param)).fgDefault());
+					}
+				}
+			} else if (mode != EnumMode.exit) {
+				logger.println("Unknown command. Type 'help' for list of available commands");
+			}
+			args = new String[]{};
+			config.resetConfig();
+			if (!startedWithNoParams || mode == EnumMode.exit)
+				exit = true;
+			mode = null;
+			helpCommand = null;
+			executeTimes++;
+		}
+		shutdown();
+	}
+
+	private static void setParams(Map<String, Object> parsedArgs, EnumMode mode) {
+		for (Map.Entry<String, Object> arg : parsedArgs.entrySet()) {
+			Object value = arg.getValue();
+			String name = arg.getKey();
+			if(value == null) {
+				switch (name) {
+					case "client":
+					case "server":
+						config.setParameter(name, true);
+					break;
+				}
+				if(mode == EnumMode.help) {
+					try {
+						helpCommand = EnumMode.valueOf(name);
+					}
+					catch (IllegalArgumentException ignored) {}
+				}
+				if(mode == EnumMode.setup || mode == EnumMode.test) {
+					config.setParameter("setupversion", name);
+				}
+			}
+			else if(value instanceof Integer) {
+				config.setParameter(name, (Integer)value);
+			}
+			else if(value instanceof Boolean) {
+				config.setParameter(name, (Boolean)value);
+			}
+			else if(value instanceof String) {
+				config.setParameter(name, (String)value);
+			}
+			else if(value instanceof String[]) {
+				config.setParameter(name, (String[])value);
+			}
+		}
+	}
+
+	private static void shutdown() {
+		input.close();
+		logger.close();
+	}
+
+	private static void start() {
+		TaskInfo task = getTaskInfo(mode);
+		try {
+			logger.info(new Ansi().fgMagenta().a("====== ").fgDefault().a(task.title()).fgMagenta().a(" ======").fgDefault().toString());
+			processTask(task);
+			logger.resetProgressString();
+			String completemsg = task.successMsg();
+			if(completemsg != null) {
+				logger.info(new Ansi().a('\n').fgBrightGreen().a(completemsg).fgDefault().toString());
+				List<String> errors = task.getInfoList();
+				for(String error : errors) {
+					logger.info(" " + error.replace("\n", "\n "));
+				}
+			}
+		} catch (Exception e) {
+			logger.info(new Ansi().a('\n').fgBrightRed().a(task.failMsg()).fgDefault().toString());
+			List<String> errors = task.getInfoList();
+			for(String error : errors) {
+				logger.info(" " + error.replace("\n", "\n "));
+			}
+			if (config.debug) e.printStackTrace();
+			else {
+				String msg = e.getMessage();
+				if(msg != null) {
+					logger.info(msg);
+				}
+				logger.info("Use -debug for more info");
+			}
+		}
+		task.clearInfoList();
+	}
+
+	public static TaskInfo getTaskInfo(EnumMode enumMode) {
+		return enumMode.task;
+	}
+
+	private static void processTask(TaskInfo task) throws Exception {
+		if(task.isMultiThreaded()) {
+			processMultitasks(task);
+		}
+		else {
+			task.newTask(-1).doTask();
+		}
+	}
+	
+	private static void processMultitasks(TaskInfo task) throws Exception {
+		List<SideThread> threads = new ArrayList<>();
+		if(config.onlySide < 0 || config.onlySide == SideThread.CLIENT) {
+			threads.add(new SideThread(SideThread.CLIENT, task.newTask(SideThread.CLIENT)));
+		}
+
+		if(config.onlySide < 0 || config.onlySide == SideThread.SERVER) {
+			if(VersionsParser.hasServer()) {
+				threads.add(new SideThread(SideThread.SERVER, task.newTask(SideThread.SERVER)));
+			}
+		}
+		logger.newLine();
+		for (SideThread thread : threads) {
+			logger.newLine();
+			thread.start();
+		}
+		boolean working = true;
+		Exception ex = null;
+		
+		while (working) {
+			Thread.sleep(10);
+			logger.printProgressBars(threads);
+			working = false;
+			for(SideThread thread : threads) {
+				working = working || thread.isAlive();
+			}
+		}
+		logger.printProgressBars(threads);
+		for(SideThread thread : threads) {
+			if (thread.exception != null) {
+				ex = thread.exception;
+			}
+		}
+		if(ex != null) throw ex;
+	}
+
+	private static void parseArg(String arg, Map<String, Object> map) {
+		int equalSign = arg.indexOf('=');
+		if (arg.startsWith("-") && equalSign > 0) {
+			String name = arg.substring(1, equalSign);
+			String[] values = arg.substring(equalSign + 1).split(",");
+			Object value;
+			for (int i = 0; i < values.length; i++) {
+				values[i] = values[i].replace("\\n", "\n").replace("\\t", "\t");
+			}
+			if(values.length == 1) {
+				try {
+					value = Integer.parseInt(values[0]);
+				}
+				catch (NumberFormatException e) {
+					if(values[0].equals("false") || values[0].equals("true")) {
+						value = Boolean.parseBoolean(values[0]);
+					}
+					else {
+						value = values[0];
+					}
+				}
+			}
+			else {
+				value = values;
+			}
+			map.put(name, value);
+		} else if (arg.startsWith("-")) {
+			String name = arg.substring(1);
+			map.put(name, true);
+		} else {
+			map.put(arg, null);
+		}
+	}
+
+	private static boolean setMode(String name) {
+		try {
+			mode = EnumMode.valueOf(name);
+			return mode.task != null;
+		}
+		catch (IllegalArgumentException ignored) {}
+		return false;
+	}
 }
