@@ -15,7 +15,7 @@ public class Update {
 			while(keepTrying) {
 				try {
 					Files.deleteIfExists(Paths.get(args[0]));
-					Files.copy(Paths.get(MCPConfig.UPDATE_JAR), Paths.get(args[0]));
+					Files.copy(Paths.get(MCPPaths.UPDATE_JAR), Paths.get(args[0]));
 					Util.runCommand(new String[] {
 						Util.getJava(),
 						"-jar",
@@ -25,6 +25,19 @@ public class Update {
 				} catch (IOException e) {
 					keepTrying = System.currentTimeMillis() - startTime < 10000;
 				}
+			}
+		}
+	}
+
+	public static void attemptToDeleteUpdateJar() {
+		long startTime = System.currentTimeMillis();
+		boolean keepTrying = true;
+		while(keepTrying) {
+			try {
+				Files.deleteIfExists(Paths.get(MCPPaths.UPDATE_JAR));
+				keepTrying = false;
+			} catch (IOException e) {
+				keepTrying = System.currentTimeMillis() - startTime < 10000;
 			}
 		}
 	}

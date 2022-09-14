@@ -2,54 +2,60 @@ package org.mcphackers.mcp.tasks;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import org.mcphackers.mcp.MCP;
-import org.mcphackers.mcp.MCPConfig;
-import org.mcphackers.mcp.tasks.info.TaskInfo;
+import org.mcphackers.mcp.MCPPaths;
+import org.mcphackers.mcp.TaskParameter;
 import org.mcphackers.mcp.tools.FileUtil;
 import org.mcphackers.mcp.tools.Util;
 
 public class TaskCleanup extends Task {
 
-	public TaskCleanup(TaskInfo info) {
-		super(-1 , info);
+	public TaskCleanup(MCP instance) {
+		super(Side.ANY, instance);
 	}
 
 	@Override
 	public void doTask() throws Exception {
+		cleanup(mcp.getOptions().getBooleanParameter(TaskParameter.SRC_CLEANUP));
+	}
+	
+	public void cleanup(boolean srcCleanup) throws Exception {
 		long startTime = System.currentTimeMillis();
 		int foldersDeleted = 0;
 		Path[] pathsToDelete = new Path[] {
-				Paths.get(MCPConfig.CONF),
-				Paths.get(MCPConfig.JARS),
-				Paths.get(MCPConfig.LIB),
-				Paths.get(MCPConfig.TEMP),
-				Paths.get(MCPConfig.SRC),
-				Paths.get(MCPConfig.BIN),
-				Paths.get(MCPConfig.REOBF),
-				Paths.get(MCPConfig.BUILD),
-				Paths.get("workspace")
+				MCPPaths.get(mcp, MCPPaths.CONF),
+				MCPPaths.get(mcp, MCPPaths.JARS),
+				MCPPaths.get(mcp, MCPPaths.LIB),
+				MCPPaths.get(mcp, MCPPaths.LIB_CLIENT),
+				MCPPaths.get(mcp, MCPPaths.LIB_SERVER),
+				MCPPaths.get(mcp, MCPPaths.TEMP),
+				MCPPaths.get(mcp, MCPPaths.SRC),
+				MCPPaths.get(mcp, MCPPaths.BIN),
+				MCPPaths.get(mcp, MCPPaths.REOBF),
+				MCPPaths.get(mcp, MCPPaths.BUILD),
+				MCPPaths.get(mcp, "workspace")
 			};
-		if (MCP.config.srcCleanup) pathsToDelete = new Path[] {
-				Paths.get(MCPConfig.SRC),
-				Paths.get(MCPConfig.BIN),
-				Paths.get(MCPConfig.REOBF),
-				Paths.get(MCPConfig.BUILD)
+		if (srcCleanup) pathsToDelete = new Path[] {
+				MCPPaths.get(mcp, MCPPaths.SRC),
+				MCPPaths.get(mcp, MCPPaths.BIN),
+				MCPPaths.get(mcp, MCPPaths.REOBF),
+				MCPPaths.get(mcp, MCPPaths.BUILD)
 			};
 		for (Path path : pathsToDelete) {
 			if (Files.exists(path)) {
 				foldersDeleted++;
-				MCP.logger.info(" Deleting " + path + "...");
+				log("Deleting " + path.getFileName() + "...");
 				FileUtil.deleteDirectory(path);
 			}
 		}
+		mcp.setCurrentVersion(null);
 
 		if(foldersDeleted > 0) {
-			MCP.logger.info(" Done in " + Util.time(System.currentTimeMillis() - startTime));
+			log("Done in " + Util.time(System.currentTimeMillis() - startTime));
 		}
 		else {
-			MCP.logger.info(" Nothing to clear!");
+			log("Nothing to clear!");
 		}
 	}
 }

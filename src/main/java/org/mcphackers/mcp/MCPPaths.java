@@ -1,6 +1,11 @@
 package org.mcphackers.mcp;
 
-public class MCPConfig {
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
+
+public class MCPPaths {
 
 	
 	//Directories
@@ -16,11 +21,13 @@ public class MCPConfig {
 	//Files and subdirectories
 	public static final String CLIENT = 			 JARS + "minecraft.jar";
 	public static final String SERVER = 			 JARS + "minecraft_server.jar";
-	public static final String CLIENT_FIXED = 		 LIB + "minecraft.jar";
-	public static final String LWJGL = 				 LIB + "lwjgl.jar";
-	public static final String LWJGL_UTIL = 		 LIB + "lwjgl_util.jar";
-	public static final String JINPUT = 	 		 LIB + "jinput.jar";
-	public static final String NATIVES = 			 LIB + "natives";
+	public static final String LIB_CLIENT =			 LIB + "client/";
+	public static final String LIB_SERVER =			 LIB + "server/";
+	public static final String CLIENT_FIXED = 		 LIB_CLIENT + "minecraft.jar";
+	public static final String LWJGL = 				 LIB_CLIENT + "lwjgl.jar";
+	public static final String LWJGL_UTIL = 		 LIB_CLIENT + "lwjgl_util.jar";
+	public static final String JINPUT = 	 		 LIB_CLIENT + "jinput.jar";
+	public static final String NATIVES = 			 LIB_CLIENT + "natives";
 	public static final String CLIENT_TINY_OUT = 	 TEMP + "client_deobf.jar";
 	public static final String SERVER_TINY_OUT = 	 TEMP + "server_deobf.jar";
 	public static final String CLIENT_EXC_OUT = 	 TEMP + "client_exc.jar";
@@ -60,97 +67,19 @@ public class MCPConfig {
 	public static final String BUILD_JAR_SERVER = 	 BUILD + "minecraft_server.jar";
 	public static final String UPDATE_JAR 		= 	 "update.jar";
 	
-	public boolean debug;
-	public boolean patch;
-	public boolean srcCleanup;
-	public String[] ignorePackages;
-	public int onlySide;
-	public String indentionString;
-	public boolean fullBuild;
-	public boolean runBuild;
-	public String setupVersion;
-	public String[] runArgs;
+	private static final Map<String, Path> paths = new HashMap<>();
+	private static Path cachedWorkingDir;
 
-	public MCPConfig() {
-		resetConfig();
-	}
-
-	public void resetConfig() {
-		debug = false;
-		patch = true;
-		srcCleanup = false;
-		onlySide = -1;
-		ignorePackages = new String[]{"paulscode", "com/jcraft", "isom"};
-		indentionString = "\t";
-		fullBuild = false;
-		runBuild = false;
-		setupVersion = null;
-		runArgs = null;
-	}
-
-	public void setParameter(String name, int value) {
-		switch (name) {
-			case "side":
-				onlySide = value;
-				break;
-			default:
-				// TODO: Cancel task
+	public static Path get(MCP mcp, String path) {
+		if(mcp.getWorkingDir() != cachedWorkingDir) {
+			cachedWorkingDir = mcp.getWorkingDir();
+			paths.clear();
 		}
-	}
-
-	public void setParameter(String name, String value) {
-		switch (name) {
-			case "ind":
-			case "indention":
-				indentionString = value;
-				break;
-			case "ignore":
-				ignorePackages = new String[] {value};
-				break;
-			case "setupversion":
-				setupVersion = value;
-				break;
-			default:
-				// TODO: Cancel task
+		if(!paths.containsKey(path)) {
+			Path p = cachedWorkingDir.resolve(Paths.get(path));
+			paths.put(path, p);
+			return p;
 		}
+		return paths.get(path);
 	}
-
-	public void setParameter(String name, String[] value) {
-		switch (name) {
-			case "ignore":
-				ignorePackages = value;
-				break;
-			default:
-				// TODO: Cancel task
-		}
-	}
-
-	public void setParameter(String name, boolean value) {
-		switch (name) {
-			case "debug":
-				debug = value;
-				break;
-			case "patch":
-				patch = value;
-				break;
-			case "client":
-				onlySide = value ? 0 : onlySide;
-				break;
-			case "server":
-				onlySide = value ? 1 : onlySide;
-				break;
-			case "src":
-				srcCleanup = value;
-				break;
-			case "fullbuild":
-				fullBuild = value;
-				break;
-			case "runbuild":
-				runBuild = value;
-				break;
-			default:
-				// TODO: Cancel task
-		}
-	}
-
 }

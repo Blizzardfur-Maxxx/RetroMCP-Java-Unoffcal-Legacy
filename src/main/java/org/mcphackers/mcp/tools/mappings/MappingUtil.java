@@ -28,7 +28,7 @@ import net.fabricmc.tinyremapper.OutputConsumerPath;
 import net.fabricmc.tinyremapper.TinyRemapper;
 import net.fabricmc.tinyremapper.TinyUtils;
 
-public class MappingUtil {
+public abstract class MappingUtil {
 
 	private static final Pattern MC_LV_PATTERN = Pattern.compile("\\$\\$\\d+");
 
@@ -118,15 +118,13 @@ public class MappingUtil {
 	}
 	
 	public static void modifyMethod(MemoryMappingTree mappingTree, String className, String name, String descriptor, String dstName) {
-		if (mappingTree.visitClass(className))
-		if (mappingTree.visitMethod(name, descriptor)) {
+		if (mappingTree.visitClass(className) && mappingTree.visitMethod(name, descriptor)) {
 			mappingTree.visitDstName(MappedElementKind.METHOD, 0, dstName);
 		}
 	}
 	
 	public static void modifyField(MemoryMappingTree mappingTree, String className, String name, String descriptor, String dstName) {
-		if (mappingTree.visitClass(className))
-		if (mappingTree.visitField(name, descriptor)) {
+		if (mappingTree.visitClass(className) && mappingTree.visitField(name, descriptor)) {
 			mappingTree.visitDstName(MappedElementKind.FIELD, 0, dstName);
 		}
 	}
@@ -142,6 +140,26 @@ public class MappingUtil {
 				remapper.finish();
 			}
 		}
+	}
+
+	public static String getObfuscatedName(int number) {
+		// Default obfuscation scheme
+		return getObfuscatedName('a', 'z', number);
+	}
+
+	public static String getObfuscatedName(char from, char to, int number) {
+		if(number == 0) {
+			return String.valueOf(from);
+		}
+		int num = number;
+		int allChars = to - from  + 1;
+		StringBuilder retName = new StringBuilder();
+		while(num >= 0) {
+			char c = (char) (from + (num % allChars));
+			retName.insert(0, c);
+			num = num / allChars - 1;
+		}
+		return retName.toString();
 	}
 
 	private static TinyRemapper applyMappings(IMappingProvider mappings, Path input, BiConsumer<String, byte[]> consumer, Path... classpath) {
